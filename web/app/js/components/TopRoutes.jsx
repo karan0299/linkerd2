@@ -48,8 +48,8 @@ const toResourceName = (query, typeKey, nameKey) => {
 
 const styles = theme => ({
   root: {
-    marginTop: 3 * theme.spacing.unit,
-    marginBottom:theme.spacing.unit,
+    marginTop: theme.spacing(3),
+    marginBottom:theme.spacing(1),
   },
   formControl: {
     minWidth: 200,
@@ -190,8 +190,8 @@ class TopRoutes extends React.Component {
 
     return (
       <CardContent>
-        <Grid container direction="column" spacing={16}>
-          <Grid item container spacing={32} alignItems="center" justify="flex-start">
+        <Grid container direction="column" spacing={2}>
+          <Grid item container spacing={4} alignItems="center" justify="flex-start">
             <Grid item>
               { this.renderNamespaceDropdown("Namespace", "namespace", "Namespace to query") }
             </Grid>
@@ -221,7 +221,7 @@ class TopRoutes extends React.Component {
             </Grid>
           </Grid>
 
-          <Grid item container spacing={32} alignItems="center" justify="flex-start">
+          <Grid item container spacing={4} alignItems="center" justify="flex-start">
             <Grid item>
               { this.renderNamespaceDropdown("To Namespace", "to_namespace", "Namespece of target resource") }
             </Grid>

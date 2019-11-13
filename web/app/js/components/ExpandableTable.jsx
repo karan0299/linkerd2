@@ -19,7 +19,7 @@ import { withStyles } from '@material-ui/core/styles';
 const styles = theme => ({
   root: {
     width: '100%',
-    marginTop: theme.spacing.unit * 3,
+    marginTop: theme.spacing(3),
     overflowX: 'auto',
   },
   expandedWrap: {
@@ -28,6 +28,10 @@ const styles = theme => ({
   },
   table: {
     minWidth: 700
+  },
+  tableHeader: {
+    fontSize: "12px",
+    opacity: 0.6,
   },
 });
 
@@ -72,7 +76,8 @@ class ExpandableTable extends React.Component {
                 columns.map(c => (
                   <TableCell
                     key={c.key}
-                    numeric={c.isNumeric}>{c.title}
+                    className={classes.tableHeader}
+                    align={c.isNumeric ? "right" : "left"}>{c.title}
                   </TableCell>
                   )
                 )
@@ -95,7 +100,7 @@ class ExpandableTable extends React.Component {
                             columns.map(c => (
                               <TableCell
                                 key={`table-${d.key}-${c.key}`}
-                                numeric={c.isNumeric}>
+                                align={c.isNumeric ? "right" : "left"}>
                                 {c.render(d)}
                               </TableCell>
                             ))
