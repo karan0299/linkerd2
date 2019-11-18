@@ -21,6 +21,7 @@ import (
 	termbox "github.com/nsf/termbox-go"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/codes"
 )
 
 type topOptions struct {
@@ -534,7 +535,12 @@ func newRow(req topRequest) (tableRow, error) {
 	if success {
 		switch eos := req.rspEnd.GetEos().GetEnd().(type) {
 		case *pb.Eos_GrpcStatusCode:
-			success = eos.GrpcStatusCode == 0
+			switch codes.Code(eos.GrpcStatusCode) {
+			case codes.OK, codes.InvalidArgument, codes.NotFound:
+				success = true
+			default:
+				success = false
+			}
 
 		case *pb.Eos_ResetErrorCode:
 			success = false
