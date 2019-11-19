@@ -42,6 +42,7 @@ require (
 	github.com/mattn/go-isatty v0.0.9
 	github.com/mattn/go-runewidth v0.0.2
 	github.com/nsf/termbox-go v0.0.0-20180613055208-5c94acc5e6eb
+	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/pkg/browser v0.0.0-20170505125900-c90ca0c84f15
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/projectcalico/go-json v0.0.0-20161128004156-6219dc7339ba // indirect
