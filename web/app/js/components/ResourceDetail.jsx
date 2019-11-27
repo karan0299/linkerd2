@@ -107,21 +107,6 @@ export class ResourceDetailBase extends React.Component {
     this.api.cancelCurrentRequests();
   }
 
-  getDisplayMetrics(metricsByResource) {
-    // if we're displaying a pod detail page, only display pod metrics
-    // if we're displaying another type of resource page, display metrics for
-    // rcs, deploys, replicasets, etc but not pods or authorities
-    let shouldExclude = this.state.resourceType === "pod" ?
-      r => r !== "pod" :
-      r => r === "pod" || r === "authority" || r === "service";
-    return _reduce(metricsByResource, (mem, resourceMetrics, resource) => {
-      if (shouldExclude(resource)) {
-        return mem;
-      }
-      return mem.concat(resourceMetrics);
-    }, []);
-  }
-
   loadFromServer() {
     if (this.state.pendingRequests) {
       return; // don't make more requests if the ones we sent haven't completed
@@ -129,6 +114,16 @@ export class ResourceDetailBase extends React.Component {
     this.setState({ pendingRequests: true });
 
     let { resource } = this.state;
+
+    // Define upstream / downstream metrics urls based on resource type
+    let baseMetricsURL;
+    if (resource.type === "pod") {
+      baseMetricsURL = `${this.api.urlsForResource("pod")}`;
+    } else {
+      baseMetricsURL = `${this.api.urlsForResource("all")}&exclude=authority&exclude=pod&exclude=service`;
+    }
+    let upstreamMetricsURL = `${baseMetricsURL}&to_name=${resource.name}&to_type=${resource.type}&to_namespace=${resource.namespace}`;
+    let downstreamMetricsURL = `${baseMetricsURL}&from_name=${resource.name}&from_type=${resource.type}&from_namespace=${resource.namespace}`;
 
     let apiRequests =
       [
@@ -143,13 +138,9 @@ export class ResourceDetailBase extends React.Component {
           `${this.api.urlsForResource("pod", resource.namespace, true)}`
         ),
         // upstream resources of this resource (meshed traffic only)
-        this.api.fetchMetrics(
-          `${this.api.urlsForResource("all")}&to_name=${resource.name}&to_type=${resource.type}&to_namespace=${resource.namespace}`
-        ),
+        this.api.fetchMetrics(upstreamMetricsURL),
         // downstream resources of this resource (meshed traffic only)
-        this.api.fetchMetrics(
-          `${this.api.urlsForResource("all")}&from_name=${resource.name}&from_type=${resource.type}&from_namespace=${resource.namespace}`
-        )
+        this.api.fetchMetrics(downstreamMetricsURL),
       ];
 
     if (_indexOf(edgeDataAvailable, resource.type) > 0) {
@@ -297,8 +288,8 @@ export class ResourceDetailBase extends React.Component {
         }
       }));
 
-    let upstreamMetrics = this.getDisplayMetrics(this.state.upstreamMetrics);
-    let downstreamMetrics = this.getDisplayMetrics(this.state.downstreamMetrics);
+    let upstreamMetrics = _reduce(this.state.upstreamMetrics, (mem, metrics) => mem.concat(metrics), []);
+    let downstreamMetrics = _reduce(this.state.downstreamMetrics, (mem, metrics) => mem.concat(metrics), []);
 
     let upstreams = upstreamMetrics.concat(unmeshed);
 
