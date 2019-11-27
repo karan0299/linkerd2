@@ -413,27 +413,39 @@ func (api *API) GetOwnerKindAndName(pod *corev1.Pod, retry bool) (string, string
 	}
 
 	parent := ownerRefs[0]
-	if parent.Kind == "ReplicaSet" {
-		var rs *appsv1.ReplicaSet
-		var err error
-		rs, err = api.RS().Lister().ReplicaSets(pod.Namespace).Get(parent.Name)
+	var parentObj metav1.Object
+	var err error
+	switch parent.Kind {
+	case "Job":
+		parentObj, err = api.Job().Lister().Jobs(pod.Namespace).Get(parent.Name)
+		if err != nil {
+			log.Warnf("failed to retrieve job from indexer %s/%s: %s", pod.Namespace, parent.Name, err)
+			if retry {
+				parentObj, err = api.Client.BatchV1().Jobs(pod.Namespace).Get(parent.Name, metav1.GetOptions{})
+				if err != nil {
+					log.Warnf("failed to retrieve job from direct API call %s/%s: %s", pod.Namespace, parent.Name, err)
+				}
+			}
+		}
+	case "ReplicaSet":
+		parentObj, err = api.RS().Lister().ReplicaSets(pod.Namespace).Get(parent.Name)
 		if err != nil {
 			log.Warnf("failed to retrieve replicaset from indexer %s/%s: %s", pod.Namespace, parent.Name, err)
 			if retry {
-				rs, err = api.Client.AppsV1().ReplicaSets(pod.Namespace).Get(parent.Name, metav1.GetOptions{})
+				parentObj, err = api.Client.AppsV1().ReplicaSets(pod.Namespace).Get(parent.Name, metav1.GetOptions{})
 				if err != nil {
 					log.Warnf("failed to retrieve replicaset from direct API call %s/%s: %s", pod.Namespace, parent.Name, err)
 				}
 			}
 		}
-
-		if err != nil || len(rs.GetOwnerReferences()) != 1 {
-			return strings.ToLower(parent.Kind), parent.Name
-		}
-		rsParent := rs.GetOwnerReferences()[0]
-		return strings.ToLower(rsParent.Kind), rsParent.Name
+	default:
+		return strings.ToLower(parent.Kind), parent.Name
 	}
 
+	if err == nil && len(parentObj.GetOwnerReferences()) == 1 {
+		grandParent := parentObj.GetOwnerReferences()[0]
+		return strings.ToLower(grandParent.Kind), grandParent.Name
+	}
 	return strings.ToLower(parent.Kind), parent.Name
 }
 

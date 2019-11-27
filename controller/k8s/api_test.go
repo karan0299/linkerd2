@@ -1032,6 +1032,31 @@ metadata:
   name: vote-bot
   namespace: default`,
 		},
+		{
+			expectedOwnerKind: "cronjob",
+			expectedOwnerName: "my-cronjob",
+			podConfig: `
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-pod
+  namespace: my-ns
+  ownerReferences:
+  - apiVersion: batch/v1
+    kind: Job
+    name: my-job`,
+			extraConfigs: []string{`
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: my-job
+  namespace: my-ns
+  ownerReferences:
+  - apiVersion: batch/v1beta1
+    kind: CronJob
+    name: my-cronjob`,
+			},
+		},
 	} {
 		tt := tt // pin
 		for _, retry := range []bool{
