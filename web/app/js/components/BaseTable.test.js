@@ -82,4 +82,42 @@ describe("Tests for <BaseTable>", () => {
     expect(emptyCard).toBeDefined();
     expect(emptyCard).toHaveLength(1);
   });
+
+  it("filters the table", () => {
+    let extraProps = _merge({}, defaultProps, {
+      tableRows: [{
+        deployment: "authors",
+        namespace: "default",
+        key: "default-deployment-authors",
+        pods: {totalPods: "1", meshedPods: "1"}
+      },
+      {
+        deployment: "books",
+        namespace: "default",
+        key: "default-deployment-books",
+        pods: {totalPods: "2", meshedPods: "1"}
+      }],
+      tableColumns: [{
+        dataIndex: "deployment",
+        title: "Name",
+        filter: x => x.deployment,
+      },
+      {
+        dataIndex: "namespace",
+        title: "Namespace"
+      }],
+      enableFilter: true
+    });
+
+    const component = mount(routerWrap(BaseTable, extraProps));
+
+    expect(component.find("TableBody").find("TableRow")).toHaveLength(2);
+
+    component.find("BaseTable").instance().setState({
+      filterBy: new RegExp(/auth/),
+      orderBy: "deployment",
+    });
+    component.update();
+    expect(component.find("TableBody").find("TableRow")).toHaveLength(1);
+  });
 });
