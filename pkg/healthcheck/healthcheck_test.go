@@ -1857,49 +1857,76 @@ func TestValidateIssuerCert(t *testing.T) {
 		lifespan           *lifeSpan
 		tlsSecretScheme    string
 		schemeInConfig     string
-		expectedErr        error
-		expectedWarning    error
+		expectedOutput     []string
 	}{
 		{
 			checkDescription: "works with valid cert and linkerd.io/tls secret",
 			tlsSecretScheme:  k8s.IdentityIssuerSchemeLinkerd,
 			schemeInConfig:   k8s.IdentityIssuerSchemeLinkerd,
-			expectedErr:      nil,
+			expectedOutput: []string{
+				"linkerd-certs certificate config is valid",
+				"linkerd-certs data plane proxies certificate match CA",
+				"linkerd-certs no trust roots expire sooner than 60 days from now",
+				"linkerd-certs issuer certificate matches algorithm requirements",
+				"linkerd-certs issuer certificate is not expired",
+				"linkerd-certs issuer certificate validates with trust roots",
+			},
 		},
 		{
 			checkDescription: "works with valid cert and kubernetes.io/tls secret",
 			tlsSecretScheme:  string(corev1.SecretTypeTLS),
 			schemeInConfig:   string(corev1.SecretTypeTLS),
-			expectedErr:      nil,
+			expectedOutput: []string{
+				"linkerd-certs certificate config is valid",
+				"linkerd-certs data plane proxies certificate match CA",
+				"linkerd-certs no trust roots expire sooner than 60 days from now",
+				"linkerd-certs issuer certificate matches algorithm requirements",
+				"linkerd-certs issuer certificate is not expired",
+				"linkerd-certs issuer certificate validates with trust roots",
+			},
 		},
 		{
 			checkDescription: "works if config scheme is empty and secret scheme is linkerd.io/tls (pre 2.7)",
 			tlsSecretScheme:  k8s.IdentityIssuerSchemeLinkerd,
 			schemeInConfig:   "",
-			expectedErr:      nil,
+			expectedOutput: []string{
+				"linkerd-certs certificate config is valid",
+				"linkerd-certs data plane proxies certificate match CA",
+				"linkerd-certs no trust roots expire sooner than 60 days from now",
+				"linkerd-certs issuer certificate matches algorithm requirements",
+				"linkerd-certs issuer certificate is not expired",
+				"linkerd-certs issuer certificate validates with trust roots",
+			},
 		},
 		{
 			checkDescription: "fails if config scheme is empty and secret scheme is kubernetes.io/tls (pre 2.7)",
 			tlsSecretScheme:  string(corev1.SecretTypeTLS),
 			schemeInConfig:   "",
-			expectedErr:      errors.New("key crt.pem containing the issuer certificate needs to exist in secret linkerd-identity-issuer if --identity-external-issuer=false"),
+			expectedOutput:   []string{"linkerd-certs certificate config is valid: key crt.pem containing the issuer certificate needs to exist in secret linkerd-identity-issuer if --identity-external-issuer=false"},
 		},
 		{
 			checkDescription: "fails when config scheme is linkerd.io/tls but secret scheme is kubernetes.io/tls in config is different than the one in the issuer secret",
 			tlsSecretScheme:  string(corev1.SecretTypeTLS),
 			schemeInConfig:   k8s.IdentityIssuerSchemeLinkerd,
-			expectedErr:      errors.New("key crt.pem containing the issuer certificate needs to exist in secret linkerd-identity-issuer if --identity-external-issuer=false"),
+			expectedOutput:   []string{"linkerd-certs certificate config is valid: key crt.pem containing the issuer certificate needs to exist in secret linkerd-identity-issuer if --identity-external-issuer=false"},
 		},
 		{
 			checkDescription: "fails when config scheme is kubernetes.io/tls but secret scheme is linkerd.io/tls in config is different than the one in the issuer secret",
 			tlsSecretScheme:  k8s.IdentityIssuerSchemeLinkerd,
 			schemeInConfig:   string(corev1.SecretTypeTLS),
-			expectedErr:      errors.New("key ca.crt containing the trust anchors needs to exist in secret linkerd-identity-issuer if --identity-external-issuer=true"),
+			expectedOutput:   []string{"linkerd-certs certificate config is valid: key ca.crt containing the trust anchors needs to exist in secret linkerd-identity-issuer if --identity-external-issuer=true"},
 		},
 		{
 			checkDescription:   "fails when cert dns is wrong",
 			certificateDNSName: "wrong.linkerd.cluster.local",
-			expectedErr:        errors.New("x509: certificate is valid for wrong.linkerd.cluster.local, not identity.linkerd.cluster.local"),
+			expectedOutput: []string{
+				"linkerd-certs certificate config is valid",
+				"linkerd-certs data plane proxies certificate match CA",
+				"linkerd-certs no trust roots expire sooner than 60 days from now",
+				"linkerd-certs issuer certificate matches algorithm requirements",
+				"linkerd-certs issuer certificate is not expired",
+				"linkerd-certs issuer certificate validates with trust roots: x509: certificate is valid for wrong.linkerd.cluster.local, not identity.linkerd.cluster.local",
+			},
 		},
 		{
 			checkDescription: "fails when cert is not valid yet",
@@ -1907,7 +1934,13 @@ func TestValidateIssuerCert(t *testing.T) {
 				starts: time.Date(2100, 1, 1, 1, 1, 1, 1, time.UTC),
 				ends:   time.Date(2101, 1, 1, 1, 1, 1, 1, time.UTC),
 			},
-			expectedErr: errors.New("invalid issuer certificate: certificate not valid before: 2100-01-01T01:00:51Z"),
+			expectedOutput: []string{
+				"linkerd-certs certificate config is valid",
+				"linkerd-certs data plane proxies certificate match CA",
+				"linkerd-certs no trust roots expire sooner than 60 days from now",
+				"linkerd-certs issuer certificate matches algorithm requirements",
+				"linkerd-certs issuer certificate is not expired: certificate not valid before: 2100-01-01T01:00:51Z",
+			},
 		},
 		{
 			checkDescription: "fails when cert is expired",
@@ -1915,15 +1948,13 @@ func TestValidateIssuerCert(t *testing.T) {
 				starts: time.Date(1989, 1, 1, 1, 1, 1, 1, time.UTC),
 				ends:   time.Date(1990, 1, 1, 1, 1, 1, 1, time.UTC),
 			},
-			expectedErr: errors.New("invalid issuer certificate: certificate not valid anymore. Expired at: 1990-01-01T01:01:11Z"),
-		},
-		{
-			checkDescription: "warns if certificate expires to soon",
-			lifespan: &lifeSpan{
-				starts: time.Date(1989, 1, 1, 1, 1, 1, 1, time.Local),
-				ends:   time.Now().AddDate(0, 0, 1),
+			expectedOutput: []string{
+				"linkerd-certs certificate config is valid",
+				"linkerd-certs data plane proxies certificate match CA",
+				"linkerd-certs no trust roots expire sooner than 60 days from now: one or more root certificate is expiring sooner than 60 days from now",
+				"linkerd-certs issuer certificate matches algorithm requirements",
+				"linkerd-certs issuer certificate is not expired: certificate not valid anymore. Expired at: 1990-01-01T01:01:11Z",
 			},
-			expectedWarning: errors.New("certificate is expiring sooner than 60 days from now"),
 		},
 	}
 
@@ -1945,29 +1976,28 @@ func TestValidateIssuerCert(t *testing.T) {
 			testCase.tlsSecretScheme = k8s.IdentityIssuerSchemeLinkerd
 		}
 
-		t.Run(fmt.Sprintf("%d", id), func(t *testing.T) {
-			hc := NewHealthChecker([]CategoryID{}, &Options{})
+		t.Run(fmt.Sprintf("%d/%s", id, testCase.checkDescription), func(t *testing.T) {
+			hc := NewHealthChecker(
+				[]CategoryID{LinkerdCertificatesCheck},
+				&Options{
+					DataPlaneNamespace: "linkerd",
+				},
+			)
+			var err error
 			hc.ControlPlaneNamespace = "linkerd"
-
 			issuerData := createIssuerData(testCase.certificateDNSName, testCase.lifespan.starts, testCase.lifespan.ends)
 			config := getFakeConfig(testCase.tlsSecretScheme, testCase.schemeInConfig, issuerData)
-
-			var err error
 			hc.kubeAPI, err = k8s.NewFakeAPI(config...)
+			_, hc.linkerdConfig, _ = hc.checkLinkerdConfigConfigMap()
+
 			if err != nil {
-				t.Fatalf("Unexpected error: %q", err)
+				t.Fatalf("Unexpected error: %s", err)
 			}
 
-			hc.issuerCerts, err = hc.checkIssuerCertsValidity()
-			if err != nil && err.Error() != testCase.expectedErr.Error() {
-				t.Fatalf("Error %q does not match expected error: %q", err, testCase.expectedErr)
-			}
-
-			if testCase.expectedWarning != nil {
-				warn := hc.checkIssuerCertsNotExpiringTooSoon()
-				if warn != nil && warn.Error() != testCase.expectedWarning.Error() {
-					t.Fatalf("Warning %q does not match expected warning: %q", warn, testCase.expectedWarning)
-				}
+			obs := newObserver()
+			hc.RunChecks(obs.resultFn)
+			if !reflect.DeepEqual(obs.results, testCase.expectedOutput) {
+				t.Fatalf("Expected results %v, but got %v", testCase.expectedOutput, obs.results)
 			}
 		})
 	}

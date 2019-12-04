@@ -99,21 +99,28 @@ func LoadIssuerDataFromFiles(keyPEMFile, crtPEMFile, trustPEMFile string) (*Issu
 	return &IssuerCertData{string(anchors), crt, key}, nil
 }
 
-func validateCert(cert *x509.Certificate) error {
-	if cert.PublicKeyAlgorithm != x509.ECDSA {
-		return fmt.Errorf("the required public key algorithm is %s, instead %s was used", x509.ECDSA, cert.PublicKeyAlgorithm)
-	}
-
-	if cert.SignatureAlgorithm != x509.ECDSAWithSHA256 {
-		return fmt.Errorf("the required public key algorithm is %s, instead %s was used", x509.ECDSAWithSHA256, cert.SignatureAlgorithm)
-	}
-
+// CheckCertTimeValidity ensures the certificate is valid time - wise
+func CheckCertTimeValidity(cert *x509.Certificate) error {
 	if cert.NotBefore.After(time.Now()) {
 		return fmt.Errorf("certificate not valid before: %s", cert.NotBefore.Format(time.RFC3339))
 	}
 
 	if cert.NotAfter.Before(time.Now()) {
 		return fmt.Errorf("certificate not valid anymore. Expired at: %s", cert.NotAfter.Format(time.RFC3339))
+	}
+
+	return nil
+}
+
+// CheckCertAlgoRequirements ensures the certificate respects with the constraints
+// we have posed on the public key and signature algorithms
+func CheckCertAlgoRequirements(cert *x509.Certificate) error {
+	if cert.PublicKeyAlgorithm != x509.ECDSA {
+		return fmt.Errorf("the required public key algorithm is %s, instead %s was used", x509.ECDSA, cert.PublicKeyAlgorithm)
+	}
+
+	if cert.SignatureAlgorithm != x509.ECDSAWithSHA256 {
+		return fmt.Errorf("the required public key algorithm is %s, instead %s was used", x509.ECDSAWithSHA256, cert.SignatureAlgorithm)
 	}
 
 	return nil
@@ -127,9 +134,14 @@ func (ic *IssuerCertData) VerifyAndBuildCreds(dnsName string) (*tls.Cred, error)
 		return nil, fmt.Errorf("failed to read CA: %s", err)
 	}
 
-	// we check the validity of the issuer cert
-	if err := validateCert(creds.Certificate); err != nil {
-		return nil, fmt.Errorf("invalid issuer certificate: %s", err)
+	// we check the time validity of the issuer cert
+	if err := CheckCertTimeValidity(creds.Certificate); err != nil {
+		return nil, err
+	}
+
+	// we check the algo requirements of the issuer cert
+	if err := CheckCertAlgoRequirements(creds.Certificate); err != nil {
+		return nil, err
 	}
 
 	roots, err := tls.DecodePEMCertPool(ic.TrustAnchors)

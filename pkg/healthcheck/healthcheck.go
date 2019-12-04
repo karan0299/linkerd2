@@ -2,6 +2,7 @@ package healthcheck
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"sort"
@@ -111,6 +112,10 @@ const (
 	// `apiClient` from LinkerdControlPlaneExistenceChecks, and `latestVersions`
 	// from LinkerdVersionChecks, so those checks must be added first.
 	LinkerdDataPlaneChecks CategoryID = "linkerd-data-plane"
+
+	// LinkerdCertificatesCheck adds a series of checks to validate
+	// that the TLS certificates used by Linkerd are valid
+	LinkerdCertificatesCheck CategoryID = "linkerd-certs"
 
 	// linkerdCniResourceLabel is the label key that is used to identify
 	// whether a Kubernetes resource is related to the install-cni command
@@ -291,7 +296,8 @@ type HealthChecker struct {
 	serverVersion    string
 	linkerdConfig    *configPb.All
 	uuid             string
-	issuerCerts      *tls.Cred
+	issuerCert       *tls.Cred
+	roots            []*x509.Certificate
 }
 
 // NewHealthChecker returns an initialized HealthChecker
@@ -703,6 +709,63 @@ func (hc *HealthChecker) allCategories() []category {
 			},
 		},
 		{
+			id: LinkerdCertificatesCheck,
+			checkers: []checker{
+				{
+					description: "certificate config is valid",
+					hintAnchor:  "l5d-crt-config-is-valid",
+					fatal:       true,
+					check: func(ctx context.Context) (err error) {
+						hc.issuerCert, hc.roots, err = hc.checkCertificatesConfig()
+						return
+					},
+				},
+				{
+					description: "data plane proxies certificate match CA",
+					hintAnchor:  "l5d-data-plane-proxies-certificate-match-ca",
+					warning:     true,
+					check: func(ctx context.Context) error {
+						return hc.checkDataPlaneProxiesCertificate()
+					},
+				},
+				{
+					description: "no trust roots expire sooner than 60 days from now",
+					hintAnchor:  "l5d-issuer-certs-do-not-expire-sooner-than-60-days",
+					warning:     true,
+					check: func(ctx context.Context) error {
+						return hc.checkForExpiringRootCerts()
+					},
+				},
+
+				{
+					description: "issuer certificate matches algorithm requirements",
+					hintAnchor:  "l5d-issuer-certs-match-algo-reqs",
+					fatal:       true,
+					check: func(ctx context.Context) error {
+						return issuercerts.CheckCertAlgoRequirements(hc.issuerCert.Certificate)
+					},
+				},
+
+				{
+					description: "issuer certificate is not expired",
+					hintAnchor:  "l5d-issuer-cert-not-expired",
+					fatal:       true,
+					check: func(ctx context.Context) error {
+						return issuercerts.CheckCertTimeValidity(hc.issuerCert.Certificate)
+					},
+				},
+				{
+					description: "issuer certificate validates with trust roots",
+					hintAnchor:  "l5d-issuer-certs-are-valid-for-root",
+					fatal:       true,
+					check: func(ctx context.Context) (err error) {
+						issuerDNS := fmt.Sprintf("identity.%s.%s", hc.ControlPlaneNamespace, hc.linkerdConfig.Global.IdentityContext.TrustDomain)
+						return hc.issuerCert.Verify(tls.CertificatesToPool(hc.roots), issuerDNS)
+					},
+				},
+			},
+		},
+		{
 			id: LinkerdAPIChecks,
 			checkers: []checker{
 				{
@@ -861,31 +924,6 @@ func (hc *HealthChecker) allCategories() []category {
 							}
 						}
 						return nil
-					},
-				},
-				{
-					description: "issuer certs are valid",
-					hintAnchor:  "l5d-issuer-certs-are-valid",
-					fatal:       true,
-					check: func(ctx context.Context) (err error) {
-						hc.issuerCerts, err = hc.checkIssuerCertsValidity()
-						return
-					},
-				},
-				{
-					description: "issuer certs do not expire sooner than 60 days from now",
-					hintAnchor:  "l5d-issuer-certs-do-not-expire-sooner-than-60-days",
-					warning:     true,
-					check: func(ctx context.Context) error {
-						return hc.checkIssuerCertsNotExpiringTooSoon()
-					},
-				},
-				{
-					description: "data plane proxies certificate match CA",
-					hintAnchor:  "l5d-data-plane-proxies-certificate-match-ca",
-					warning:     true,
-					check: func(ctx context.Context) error {
-						return hc.checkDataPlaneProxiesCertificate()
 					},
 				},
 			},
@@ -1047,17 +1085,19 @@ func (hc *HealthChecker) checkLinkerdConfigConfigMap() (string, *configPb.All, e
 	return string(cm.GetUID()), configPB, nil
 }
 
-func (hc *HealthChecker) checkIssuerCertsNotExpiringTooSoon() error {
-	if time.Now().AddDate(0, 0, ExpirationWarningThresholdInDays).After(hc.issuerCerts.Certificate.NotAfter) {
-		return fmt.Errorf("certificate is expiring sooner than %d days from now", ExpirationWarningThresholdInDays)
+func (hc *HealthChecker) checkForExpiringRootCerts() error {
+	for _, root := range hc.roots {
+		if time.Now().AddDate(0, 0, ExpirationWarningThresholdInDays).After(root.NotAfter) {
+			return fmt.Errorf("one or more root certificate is expiring sooner than %d days from now", ExpirationWarningThresholdInDays)
+		}
 	}
 	return nil
 }
 
-func (hc *HealthChecker) checkIssuerCertsValidity() (*tls.Cred, error) {
+func (hc *HealthChecker) checkCertificatesConfig() (*tls.Cred, []*x509.Certificate, error) {
 	_, configPB, err := FetchLinkerdConfigMap(hc.kubeAPI, hc.ControlPlaneNamespace)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	idctx := configPB.Global.IdentityContext
@@ -1075,16 +1115,20 @@ func (hc *HealthChecker) checkIssuerCertsValidity() (*tls.Cred, error) {
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	issuerDNS := fmt.Sprintf("identity.%s.%s", hc.ControlPlaneNamespace, configPB.Global.IdentityContext.TrustDomain)
-	creds, err := data.VerifyAndBuildCreds(issuerDNS)
-
+	issuerCreds, err := tls.ValidateAndCreateCreds(data.IssuerCrt, data.IssuerKey)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return creds, nil
+
+	roots, err := tls.DecodePEMCertificates(data.TrustAnchors)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return issuerCreds, roots, nil
 }
 
 // FetchLinkerdConfigMap retrieves the `linkerd-config` ConfigMap from

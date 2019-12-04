@@ -155,6 +155,7 @@ func configureAndRunChecks(wout io.Writer, werr io.Writer, stage string, options
 		checks = append(checks, healthcheck.LinkerdConfigChecks)
 
 		if stage != configStage {
+			checks = append(checks, healthcheck.LinkerdCertificatesCheck)
 			checks = append(checks, healthcheck.LinkerdControlPlaneExistenceChecks)
 			checks = append(checks, healthcheck.LinkerdAPIChecks)
 
